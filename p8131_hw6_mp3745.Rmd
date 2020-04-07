@@ -11,6 +11,7 @@ library(viridis)
 library(nnet)
 library(MASS)
 library(pscl)
+library(nlme)
 
 knitr::opts_chunk$set(
 	echo = TRUE,
@@ -27,3 +28,124 @@ scale_colour_discrete = scale_colour_viridis_d
 scale_fill_discrete = scale_fill_viridis_d
 theme_set(theme_minimal() + theme(legend.position = "bottom"))
 ```
+
+
+## Problem 1
+
+Handwritten
+
+
+## Problem 2
+
+Read in the data
+```{r}
+dental = read.table("./data/HW6-dental.txt", header = TRUE) %>% 
+  janitor::clean_names() %>% 
+  as_tibble() %>% 
+  mutate(
+    gender = recode(gender, '0' = "F", '1' = "M"),
+    gender = as_factor(gender)
+  ) 
+```
+
+#### (1)
+
+Make a spaghetti plot to infer how distance is a􏰀ected by age and gender
+```{r}
+dental %>% 
+  ggplot(aes(x = age, y = distance, color = gender, group = child)) +
+  geom_line()
+```
+
+Based on the above plot, distance appears to increase with age and distance tends to be higher for males compared to females.
+
+
+#### (2)
+
+Handwritten
+
+
+#### (3)
+###### a.
+
+Fit a model with compound symmetry covariance
+```{r}
+# Fit
+compound = gls(distance ~ gender + age,
+               data = dental,
+               correlation = corCompSymm(form = ~ 1 | child),
+               weights = varIdent(form = ~ 1| age),
+               method = "REML")
+
+# Summary
+summary(compound)
+
+# Sigma for compound
+compound_sigma = sigma(compound)
+
+(1 + compound$modelStruct$varStruct[1]) * compound_sigma
+```
+
+
+###### b.
+
+Fit a model with exponential covariance
+```{r}
+# Fit
+exponential = gls(distance ~ gender + age,
+               data = dental,
+               correlation = corExp(form = ~ 1 | child),
+               weights = varIdent(form = ~ 1| age),
+               method = "REML")
+
+# Summary
+summary(exponential)
+
+# Sigma for exponential
+exponential_sigma = sigma(exponential)
+```
+
+
+###### c.
+
+Fit a model with autoregressive covariance
+```{r}
+# Fit
+autoregressive = gls(distance ~ gender + age,
+               data = dental,
+               correlation = corAR1(form = ~ 1 | child),
+               weights = varIdent(form = ~ 1| age),
+               method = "REML")
+
+# Summary
+summary(autoregressive)
+
+# Sigma for autoregressive
+autoregressive_sigma = sigma(autoregressive)
+```
+
+
+Put together dataframe to summarize coefficient parameter estimates and covariance estimates from fits with different covariance patterns
+```{r}
+fit_summary = tibble(
+  fit = c("compound", "exponential", "autoregressive"),
+  intercept = c(compound$coefficients[1], exponential$coefficients[1], autoregressive$coefficients[1]),
+  gender = c(compound$coefficients[2], exponential$coefficients[2], autoregressive$coefficients[2]),
+  age = c(compound$coefficients[3], exponential$coefficients[3], autoregressive$coefficients[3]),
+  cov_age_8 = c(compound_sigma, exponential_sigma, autoregressive_sigma),
+  cov_age_10 = c(compound_sigma * (1 + compound$modelStruct$varStruct[1]), 
+                 exponential_sigma * (1 + exponential$modelStruct$varStruct[1]), 
+                 autoregressive_sigma * (1 + autoregressive$modelStruct$varStruct[1])),
+  cov_age_12 = c(compound_sigma * (1 + compound$modelStruct$varStruct[2]), 
+                 exponential_sigma * (1 + exponential$modelStruct$varStruct[2]), 
+                 autoregressive_sigma * (1 + autoregressive$modelStruct$varStruct[2])),
+  cov_age_14 = c(compound_sigma * (1 + compound$modelStruct$varStruct[3]), 
+                 exponential_sigma * (1 + exponential$modelStruct$varStruct[3]), 
+                 autoregressive_sigma * (1 + autoregressive$modelStruct$varStruct[3]))
+)
+
+fit_summary %>% 
+  knitr::kable()
+```
+
+The coefficient parameter and covariance estimates are nearly identical for exponential and autoregressive. The coeffecient estimate for gender is smaller for compound, but age estimate is larger. The covariance estimates at age 8 and 10 are smaller for the compound, but the covariance estimate at age 14 is higher.
